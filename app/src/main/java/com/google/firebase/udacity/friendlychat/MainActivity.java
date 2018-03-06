@@ -15,6 +15,7 @@
  */
 package com.google.firebase.udacity.friendlychat;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v7.app.AppCompatActivity;
@@ -146,38 +147,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        //use ChildEvent Listener to display the message on screen when a new message is added in database
-        mChildEventListener = new ChildEventListener() {
-            @Override
-            public void onChildAdded(DataSnapshot dataSnapshot, String s) {
-                FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
-                mMessageAdapter.add(friendlyMessage);
-            }
-
-            @Override
-            public void onChildChanged(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onChildRemoved(DataSnapshot dataSnapshot) {
-
-            }
-
-            @Override
-            public void onChildMoved(DataSnapshot dataSnapshot, String s) {
-
-            }
-
-            @Override
-            public void onCancelled(DatabaseError databaseError) {
-
-            }
-        };
-
-        //attach a childEventListener to database reference
-        mMessageDatabaseReference.addChildEventListener(mChildEventListener);
-
         //add firebase auth listener, check if user is logged in or not
         //if not, use firebase sign-in UI to sign in
         mAuthStateListener = new FirebaseAuth.AuthStateListener() {
@@ -186,10 +155,11 @@ public class MainActivity extends AppCompatActivity {
                 FirebaseUser user = firebaseAuth.getCurrentUser();
                 if(user != null){
                     //user is signed in
-                    Toast.makeText(MainActivity.this, "You are now signed in. Welcome to FriendlyChat!", Toast.LENGTH_SHORT).show();
+                    onSignedInInitialize(user.getDisplayName());
                 }
                 else {
                     //user is signed out
+                    onSignedOutCleanup();
                     startActivityForResult(
                             AuthUI.getInstance()
                                     .createSignInIntentBuilder()
@@ -213,10 +183,34 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-        return super.onOptionsItemSelected(item);
+        switch (item.getItemId()){
+            case R.id.sign_out_menu:
+                //sign out
+                AuthUI.getInstance().signOut(this);
+                return true;
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+//After firebase UI startActivityResult(the sign in flow), get result code - RESULT_OK or RESULT_CANCELLED,
+// this gets called before onResume, so user can press back button to exit sign flow
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        //if the activity that's been returned from was our login flow,
+        //we will execute this code
+        if(requestCode == RC_SIGN_IN){
+            if(resultCode == RESULT_OK){
+                Toast.makeText(this, "Signed in!", Toast.LENGTH_SHORT).show();
+            }
+            else if(resultCode == RESULT_CANCELED){
+                Toast.makeText(this, "Sign in cancelled", Toast.LENGTH_SHORT).show();
+                finish();
+            }
+        }
     }
 
-//attach authentication state change listener onResume
+    //attach authentication state change listener onResume
     @Override
     protected void onResume() {
         super.onResume();
@@ -227,6 +221,65 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        mFirebaseAuth.removeAuthStateListener(mAuthStateListener);
+        if(mAuthStateListener != null) {
+            mFirebaseAuth.removeAuthStateListener(mAuthStateListener);
+        }
+        detachDatabaseReadListener();
+        mMessageAdapter.clear();
+
+    }
+//Only for signed in users: setting username for the message sent and display it on the screen
+    private void onSignedInInitialize (String username){
+        mUsername = username;
+        attachDatabaseReadListener();
+
+    }
+//sign out user and detach database read listener
+    private void onSignedOutCleanup (){
+        mUsername = ANONYMOUS;
+        mMessageAdapter.clear();
+        detachDatabaseReadListener ();
+    }
+
+    private void attachDatabaseReadListener (){
+        //use ChildEvent Listener to display the message on screen when a new message is added in database
+        if (mChildEventListener == null) {
+            mChildEventListener = new ChildEventListener() {
+                @Override
+                public void onChildAdded(DataSnapshot dataSnapshot, String s) {
+                    FriendlyMessage friendlyMessage = dataSnapshot.getValue(FriendlyMessage.class);
+                    mMessageAdapter.add(friendlyMessage);
+                }
+
+                @Override
+                public void onChildChanged(DataSnapshot dataSnapshot, String s) {
+                }
+
+                @Override
+                public void onChildRemoved(DataSnapshot dataSnapshot) {
+                }
+
+                @Override
+                public void onChildMoved(DataSnapshot dataSnapshot, String s) {
+                }
+
+                @Override
+                public void onCancelled(DatabaseError databaseError) {
+                }
+
+            };
+            //attach a childEventListener to database reference
+            mMessageDatabaseReference.addChildEventListener(mChildEventListener);
+        }
+    }
+
+
+    private void detachDatabaseReadListener () {
+        //detach a childEventListener to database reference
+        if (mChildEventListener != null) {
+            mMessageDatabaseReference.removeEventListener(mChildEventListener);
+            mChildEventListener = null;
+        }
+
     }
 }
